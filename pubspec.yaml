@@ -6,6 +6,8 @@ publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
 version: 1.0.0+1
 
+# flutter build appbundle --release --obfuscate --split-debug-info=build/app/outputs/symbols
+
 environment:
   sdk: ^3.10.4
 
