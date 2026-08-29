@@ -1457,14 +1457,14 @@ class _WebViewScreenState extends State<WebViewScreen>
                       ),
 
                     // ==================== LOGO POPUP ANIMATION ====================
-                    if (_isInitialLoad && !_isOffline)
+                    if ((_isInitialLoad || _progress < 1.0) && !_isOffline)
                       Container(
-                        color: AppColors.backgroundColor,
+                        color: Colors.black.withOpacity(0.4),
                         child: Center(
                           child: ScaleTransition(
                             scale: _logoAnimation,
                             child: Image.asset(
-                              'assets/logo/loading_logo.png',
+                              'assets/images/splash_logo.png',
                               width: 150,
                               errorBuilder: (context, error, stackTrace) =>
                                   const Icon(

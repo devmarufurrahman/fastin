@@ -29,14 +29,14 @@ class CustomHeader extends StatelessWidget implements PreferredSizeWidget {
                   alignment: Alignment.centerRight,
                   children: [
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(2),
                       child: LinearProgressIndicator(
                         value: progress,
                         backgroundColor: Colors.grey.shade200,
                         valueColor: const AlwaysStoppedAnimation<Color>(
                           Colors.green,
                         ),
-                        minHeight: 18,
+                        minHeight: 2,
                       ),
                     ),
                     Padding(
@@ -45,7 +45,7 @@ class CustomHeader extends StatelessWidget implements PreferredSizeWidget {
                         "Loading... $percent%",
                         style: const TextStyle(
                           color: Colors.black,
-                          fontSize: 11,
+                          fontSize: 5,
                           fontWeight: FontWeight.bold,
                           shadows: [
                             Shadow(
