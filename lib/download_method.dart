@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -116,5 +117,65 @@ Future<void> downloadAndSaveToGallery(
     }
   } catch (e) {
     debugPrint('Download error: $e');
+  }
+}
+
+
+
+Future<void> saveBase64ToFile(
+  String base64String,
+  BuildContext context, {
+  String? mimeType,
+  String? suggestedFilename,
+}) async {
+  try {
+    final isPermissionGranted = await requestPermission();
+    if (!isPermissionGranted) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Permission denied!'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (base64String.contains(',')) {
+      base64String = base64String.split(',').last;
+    }
+    Uint8List bytes = base64Decode(base64String.replaceAll(RegExp(r'\s+'), ''));
+
+    Directory? directory;
+    if (Platform.isAndroid) {
+      directory = Directory('/storage/emulated/0/Download');
+      if (!await directory.exists()) {
+        directory = await getExternalStorageDirectory();
+      }
+    } else {
+      directory = await getApplicationDocumentsDirectory();
+    }
+
+    final savedDir = directory?.path ?? '';
+    if (savedDir.isEmpty) return;
+
+    final ext = (mimeType?.contains('pdf') == true) ? 'pdf' : 'file';
+    final finalFilename = suggestedFilename ?? "download_${DateTime.now().millisecondsSinceEpoch}.$ext";
+
+    File file = File('$savedDir/$finalFilename');
+    await file.writeAsBytes(bytes);
+
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Saved to $finalFilename in Downloads'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  } catch (e) {
+    debugPrint('Save base64 error: $e');
   }
 }

@@ -129,37 +129,50 @@ class _WebViewScreenState extends State<WebViewScreen>
   }
 
   // Blob বা Data URL থেকে Image Save করার জন্য
-  Future<void> _handleBlobOrDataImage(String url) async {
+  Future<void> _handleBlobOrDataImage(String url, {String? mimeType, String? suggestedFilename}) async {
     if (url.startsWith('data:image')) {
       // Direct base64
       String base64 = url.split(',').last;
-      await _saveBase64ImageToGallery(base64, context, _isRemoveBgSite);
-    } else if (url.startsWith('blob:')) {
-      // Blob URL → JS দিয়ে base64 বানিয়ে পাঠাবে
-      final base64 = await _webViewController?.evaluateJavascript(
-        source:
-            """
-      (function() {
-        return new Promise((resolve) => {
-          var xhr = new XMLHttpRequest();
-          xhr.open('GET', '$url', true);
-          xhr.responseType = 'blob';
-          xhr.onload = function() {
-            var reader = new FileReader();
-            reader.onloadend = function() {
-              var result = reader.result;
-              resolve(result.split(',')[1]);
-            };
-            reader.readAsDataURL(xhr.response);
-          };
-          xhr.send();
-        });
-      })();
-      """,
-      );
-
-      if (base64 != null && base64 is String) {
+      if (mimeType != null && mimeType.contains('pdf')) {
+        await saveBase64ToFile(base64, context, mimeType: mimeType, suggestedFilename: suggestedFilename);
+      } else {
         await _saveBase64ImageToGallery(base64, context, _isRemoveBgSite);
+      }
+    } else if (url.startsWith('blob:')) {
+      debugPrint("Starting blob to base64 conversion...");
+      
+      try {
+        final result = await _webViewController?.callAsyncJavaScript(
+          functionBody: """
+            var response = await fetch(arguments[0]);
+            var blob = await response.blob();
+            return new Promise((resolve, reject) => {
+              var reader = new FileReader();
+              reader.onloadend = function() {
+                var res = reader.result;
+                resolve(res.split(',')[1]);
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+          """,
+          arguments: { '0': url }
+        );
+        
+        final base64 = result?.value;
+        debugPrint("base64 result type: ${base64.runtimeType}, is null: ${base64 == null}");
+        
+        if (base64 != null && base64 is String) {
+          if (mimeType != null && mimeType.contains('pdf')) {
+            debugPrint("Calling saveBase64ToFile for PDF...");
+            await saveBase64ToFile(base64, context, mimeType: mimeType, suggestedFilename: suggestedFilename);
+          } else {
+            debugPrint("Calling _saveBase64ImageToGallery for Image...");
+            await _saveBase64ImageToGallery(base64, context, _isRemoveBgSite);
+          }
+        }
+      } catch (e) {
+        debugPrint("JS eval error: $e");
       }
     }
   }
@@ -1059,7 +1072,7 @@ class _WebViewScreenState extends State<WebViewScreen>
 
                           if (url.startsWith('blob:') ||
                               url.startsWith('data:image')) {
-                            await _handleBlobOrDataImage(url);
+                            await _handleBlobOrDataImage(url, mimeType: mimeType, suggestedFilename: suggestedFilename);
                             return;
                           }
 
