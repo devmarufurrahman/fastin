@@ -1459,7 +1459,7 @@ class _WebViewScreenState extends State<WebViewScreen>
                     // ==================== LOGO POPUP ANIMATION ====================
                     if ((_isInitialLoad || _progress < 1.0) && !_isOffline)
                       Container(
-                        color: Colors.black.withOpacity(0.4),
+                        color: Colors.white,
                         child: Center(
                           child: ScaleTransition(
                             scale: _logoAnimation,

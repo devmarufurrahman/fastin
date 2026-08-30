@@ -29,7 +29,7 @@ class CustomHeader extends StatelessWidget implements PreferredSizeWidget {
                   alignment: Alignment.centerRight,
                   children: [
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(2),
+                      borderRadius: BorderRadius.circular(4),
                       child: LinearProgressIndicator(
                         value: progress,
                         backgroundColor: Colors.grey.shade200,
@@ -45,15 +45,8 @@ class CustomHeader extends StatelessWidget implements PreferredSizeWidget {
                         "Loading... $percent%",
                         style: const TextStyle(
                           color: Colors.black,
-                          fontSize: 5,
+                          fontSize: 9,
                           fontWeight: FontWeight.bold,
-                          shadows: [
-                            Shadow(
-                              color: Colors.black45,
-                              blurRadius: 2,
-                              offset: Offset(0, 1),
-                            ),
-                          ],
                         ),
                       ),
                     ),
