@@ -140,36 +140,63 @@ class _WebViewScreenState extends State<WebViewScreen>
       }
     } else if (url.startsWith('blob:')) {
       debugPrint("Starting blob to base64 conversion...");
-      
+
+      final isPdf = mimeType != null && mimeType.contains('pdf');
+
       try {
+        // ✅ arguments named key দিয়ে pass করতে হবে — arguments[0] কাজ করে না
         final result = await _webViewController?.callAsyncJavaScript(
           functionBody: """
-            var response = await fetch(arguments[0]);
-            var blob = await response.blob();
-            return new Promise((resolve, reject) => {
-              var reader = new FileReader();
-              reader.onloadend = function() {
-                var res = reader.result;
-                resolve(res.split(',')[1]);
-              };
-              reader.onerror = reject;
-              reader.readAsDataURL(blob);
+            return new Promise(async function(resolve, reject) {
+              try {
+                // 🚨 URL.revokeObjectURL disable করা আছে, তাই fetch() নিশ্চিন্তে কাজ করবে!
+                var response = await fetch(arguments.blobUrl);
+                var blobToRead = await response.blob();
+
+                var reader = new FileReader();
+                reader.onloadend = function() {
+                  try {
+                    var dataUrl = reader.result;
+                    var base64 = dataUrl ? dataUrl.split(',')[1] : '';
+                    resolve(base64);
+                  } catch(splitErr) {
+                    reject('Split error: ' + splitErr);
+                  }
+                };
+                reader.onerror = function(e) {
+                  reject('FileReader error');
+                };
+                reader.readAsDataURL(blobToRead);
+              } catch(fetchErr) {
+                reject('Fetch error: ' + fetchErr.toString());
+              }
             });
           """,
-          arguments: { '0': url }
+          arguments: {'blobUrl': url},
         );
-        
+
         final base64 = result?.value;
         debugPrint("base64 result type: ${base64.runtimeType}, is null: ${base64 == null}");
-        
-        if (base64 != null && base64 is String) {
-          if (mimeType != null && mimeType.contains('pdf')) {
+        if (result?.error != null) {
+          debugPrint("JS error detail: ${result?.error}");
+        }
+
+        if (base64 != null && base64 is String && base64.isNotEmpty) {
+          if (isPdf) {
             debugPrint("Calling saveBase64ToFile for PDF...");
-            await saveBase64ToFile(base64, context, mimeType: mimeType, suggestedFilename: suggestedFilename);
+            final filename = suggestedFilename ?? "invoice_${DateTime.now().millisecondsSinceEpoch}.pdf";
+            await saveBase64ToFile(
+              base64,
+              context,
+              mimeType: 'application/pdf',
+              suggestedFilename: filename,
+            );
           } else {
             debugPrint("Calling _saveBase64ImageToGallery for Image...");
             await _saveBase64ImageToGallery(base64, context, _isRemoveBgSite);
           }
+        } else {
+          debugPrint("❌ base64 data is null or empty — blob conversion failed");
         }
       } catch (e) {
         debugPrint("JS eval error: $e");
@@ -488,6 +515,45 @@ class _WebViewScreenState extends State<WebViewScreen>
                         onWebViewCreated: (controller) {
                           _webViewController = controller;
 
+                          // ✅ Blob capture script — page script চালানোর আগেই inject
+                          // html2pdf.js এর URL.createObjectURL call intercept করে
+                          // blob object থেকে সরাসরি data পড়ে রাখে (URL revoke করলেও data থাকবে)
+                          controller.addUserScript(
+                            userScript: UserScript(
+                              source: """
+                                (function() {
+                                  if (window.__blobCaptureInstalled) return;
+                                  window.__blobCaptureInstalled = true;
+                                  window.__capturedBlobs = {};
+
+                                  var origCreate = URL.createObjectURL;
+                                  URL.createObjectURL = function(obj) {
+                                    var url = origCreate.call(URL, obj);
+                                    if (obj && obj instanceof Blob) {
+                                      // 🚨 FIX: Sync-ভাবে সরাসরি Blob object টা save করে রাখো!
+                                      // FileReader async হওয়ায় আগে save হতে দেরি হতো।
+                                      window.__capturedBlobs[url] = obj;
+                                      console.log('📦 Saved raw Blob object for URL:', url, 'size:', obj.size, 'type:', obj.type);
+                                    }
+                                    return url;
+                                  };
+
+                                  // 🚨 FIX: Revoke করা পুরোপুরি বন্ধ করো!
+                                  // revoke করলে Browser মেমোরি থেকে Blob মুছে দেয়, 
+                                  // ফলে Flutter fetch করলে 0 byte / corrupted file পায়।
+                                  var origRevoke = URL.revokeObjectURL;
+                                  URL.revokeObjectURL = function(url) {
+                                    console.log('🚫 Prevented blob revoke for:', url);
+                                    // origRevoke.call(URL, url); // <- এটা কল করা যাবে না!
+                                  };
+                                })();
+                              """,
+                              injectionTime:
+                                  UserScriptInjectionTime.AT_DOCUMENT_START,
+                              contentWorld: ContentWorld.PAGE,
+                            ),
+                          );
+
                           // ✅ Web Share API Handler (Flutter Receiver)
                           controller.addJavaScriptHandler(
                             handlerName: 'webShareApi',
@@ -686,6 +752,34 @@ class _WebViewScreenState extends State<WebViewScreen>
                                   } catch (e) {
                                     debugPrint('Share error: $e');
                                   }
+                                }
+                              }
+                            },
+                          );
+
+                          // ✅ Blob File Download — JS click level থেকে base64 receive করে
+                          // html2pdf.js এর blob URL revoke হওয়ার আগেই data নিয়ে নেয়
+                          controller.addJavaScriptHandler(
+                            handlerName: 'downloadBlobFile',
+                            callback: (args) async {
+                              if (args.length >= 2) {
+                                final String base64Data = args[0].toString();
+                                final String mime = args[1].toString();
+                                final String filename = args.length > 2
+                                    ? args[2].toString()
+                                    : 'download_${DateTime.now().millisecondsSinceEpoch}.pdf';
+
+                                debugPrint(
+                                  '📥 downloadBlobFile: mime=$mime, filename=$filename, base64 len=${base64Data.length}',
+                                );
+
+                                if (base64Data.isNotEmpty) {
+                                  await saveBase64ToFile(
+                                    base64Data,
+                                    context,
+                                    mimeType: mime,
+                                    suggestedFilename: filename,
+                                  );
                                 }
                               }
                             },

@@ -2,12 +2,28 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:path_provider/path_provider.dart';
 import 'colors.dart';
 import 'storage_permission.dart';
+
+// ✅ Android MediaStore scan — file টা Files app এ দেখানোর জন্য
+const _mediaScanChannel = MethodChannel('com.fastnin.app/media_scanner');
+
+Future<void> _triggerMediaScan(String filePath, String mimeType) async {
+  try {
+    await _mediaScanChannel.invokeMethod(
+      'scanFile',
+      {'filePath': filePath, 'mimeType': mimeType},
+    );
+    debugPrint('✅ MediaStore scan done: $filePath');
+  } catch (e) {
+    debugPrint('⚠️ MediaStore scan error: $e');
+  }
+}
 
 Future<void> downloadAndSaveToGallery(
   String imageUrl,
@@ -120,8 +136,17 @@ Future<void> downloadAndSaveToGallery(
   }
 }
 
-
-
+// ============================================================
+//  saveBase64ToFile — PDF / Blob ফাইল Save করার জন্য
+//  ✅ Fix: Temp → Downloads copy + Native Share dialog
+//  Android 10+ এ MediaStore index ছাড়া file দেখা যায় না,
+//  তাই Share dialog দিয়ে user নিজে যেখানে চায় save করবে।
+// ============================================================
+// ================================================================
+//  saveBase64ToFile — PDF / Blob থেকে File Save
+//  ✅ Fix: সরাসরি Downloads folder এ save + MediaStore scan
+//  Android সব version এ কাজ করবে — Share dialog নেই
+// ================================================================
 Future<void> saveBase64ToFile(
   String base64String,
   BuildContext context, {
@@ -129,53 +154,99 @@ Future<void> saveBase64ToFile(
   String? suggestedFilename,
 }) async {
   try {
-    final isPermissionGranted = await requestPermission();
-    if (!isPermissionGranted) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Permission denied!'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return;
-    }
-
+    // ── Step 1: base64 decode ──
     if (base64String.contains(',')) {
       base64String = base64String.split(',').last;
     }
-    Uint8List bytes = base64Decode(base64String.replaceAll(RegExp(r'\s+'), ''));
+    final Uint8List bytes =
+        base64Decode(base64String.replaceAll(RegExp(r'\s+'), ''));
 
-    Directory? directory;
+    // ── Step 2: File name ও extension ──
+    final bool isPdf = mimeType?.contains('pdf') == true;
+    final String ext = isPdf ? 'pdf' : 'bin';
+    final String finalFilename =
+        suggestedFilename ??
+        "download_${DateTime.now().millisecondsSinceEpoch}.$ext";
+    final String resolvedMime =
+        isPdf ? 'application/pdf' : (mimeType ?? 'application/octet-stream');
+
+    // ── Step 3: Downloads folder এ save ──
+    Directory? dlDir;
     if (Platform.isAndroid) {
-      directory = Directory('/storage/emulated/0/Download');
-      if (!await directory.exists()) {
-        directory = await getExternalStorageDirectory();
+      dlDir = Directory('/storage/emulated/0/Download');
+      if (!await dlDir.exists()) {
+        await dlDir.create(recursive: true);
+      }
+      if (!await dlDir.exists()) {
+        dlDir = await getExternalStorageDirectory();
       }
     } else {
-      directory = await getApplicationDocumentsDirectory();
+      dlDir = await getApplicationDocumentsDirectory();
     }
 
-    final savedDir = directory?.path ?? '';
-    if (savedDir.isEmpty) return;
+    if (dlDir == null) {
+      debugPrint('❌ Could not find download directory');
+      return;
+    }
 
-    final ext = (mimeType?.contains('pdf') == true) ? 'pdf' : 'file';
-    final finalFilename = suggestedFilename ?? "download_${DateTime.now().millisecondsSinceEpoch}.$ext";
+    final File savedFile = File('${dlDir.path}/$finalFilename');
+    await savedFile.writeAsBytes(bytes);
+    final int fileSizeKb = (await savedFile.length()) ~/ 1024;
+    debugPrint('✅ File saved: ${savedFile.path} (${fileSizeKb}KB)');
 
-    File file = File('$savedDir/$finalFilename');
-    await file.writeAsBytes(bytes);
+    if (!context.mounted) return;
 
+    // ── Step 4: MediaStore scan — Files app এ সাথে সাথে দেখাবে ──
+    await _triggerMediaScan(savedFile.path, resolvedMime);
+
+    // ── Step 5: Snackbar with OPEN button ──
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Saved to $finalFilename in Downloads'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 3),
+          content: Row(
+            children: [
+              const Icon(Icons.download_done, color: Colors.white),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '$finalFilename (${fileSizeKb}KB)\nDownloads এ save হয়েছে!',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.green.shade700,
+          duration: const Duration(seconds: 6),
+          action: SnackBarAction(
+            label: 'OPEN',
+            textColor: Colors.white,
+            onPressed: () => _openFile(savedFile.path, resolvedMime),
+          ),
         ),
       );
     }
   } catch (e) {
     debugPrint('Save base64 error: $e');
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Download failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
+
+// ✅ PDF / File খোলার জন্য — FileProvider দিয়ে system PDF viewer launch করে
+Future<void> _openFile(String filePath, String mimeType) async {
+  try {
+    await _mediaScanChannel.invokeMethod(
+      'openFile',
+      {'filePath': filePath, 'mimeType': mimeType},
+    );
+    debugPrint('✅ File opened: $filePath');
+  } catch (e) {
+    debugPrint('❌ Open file error: $e');
   }
 }
