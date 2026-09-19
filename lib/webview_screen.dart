@@ -524,12 +524,17 @@ class _WebViewScreenState extends State<WebViewScreen>
                                   if (window.__printCaptureInstalled) return;
                                   window.__printCaptureInstalled = true;
 
-                                  // 🚨 FIX: html2pdf.js Android WebView তে কাজ করে না (corrupted/blank PDF দেয়)
-                                  // তাই আমরা downloadPDF ফাংশনটাকেই override করে Android Native Print কল করে দিচ্ছি!
-                                  window.downloadPDF = function() {
-                                    console.log('🖨️ Intercepted downloadPDF! Launching Native Print...');
-                                    window.print();
-                                  };
+                                  // 🚨 FIX: ওয়েবসাইটের নিজস্ব স্ক্রিপ্ট যেন আমাদের override মুছতে না পারে,
+                                  // তাই আমরা একদম মূলে (capture phase) ক্লিক ধরে ফেলছি!
+                                  document.addEventListener('click', function(e) {
+                                    var btn = e.target.closest('[onclick*="downloadPDF"], .fa-download');
+                                    if (btn) {
+                                      e.preventDefault();
+                                      e.stopImmediatePropagation(); // ওয়েবসাইটের স্ক্রিপ্ট বন্ধ!
+                                      console.log('🖨️ Intercepted Print Button! Launching Native Print...');
+                                      window.print();
+                                    }
+                                  }, true); // true = Capture phase (সবচেয়ে আগে রান করবে)
                                 })();
                               """,
                               injectionTime:
