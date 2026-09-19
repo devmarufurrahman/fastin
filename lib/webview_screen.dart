@@ -149,7 +149,6 @@ class _WebViewScreenState extends State<WebViewScreen>
           functionBody: """
             return new Promise(async function(resolve, reject) {
               try {
-                // 🚨 URL.revokeObjectURL disable করা আছে, তাই fetch() নিশ্চিন্তে কাজ করবে!
                 var response = await fetch(arguments.blobUrl);
                 var blobToRead = await response.blob();
 
@@ -522,29 +521,14 @@ class _WebViewScreenState extends State<WebViewScreen>
                             userScript: UserScript(
                               source: """
                                 (function() {
-                                  if (window.__blobCaptureInstalled) return;
-                                  window.__blobCaptureInstalled = true;
-                                  window.__capturedBlobs = {};
+                                  if (window.__printCaptureInstalled) return;
+                                  window.__printCaptureInstalled = true;
 
-                                  var origCreate = URL.createObjectURL;
-                                  URL.createObjectURL = function(obj) {
-                                    var url = origCreate.call(URL, obj);
-                                    if (obj && obj instanceof Blob) {
-                                      // 🚨 FIX: Sync-ভাবে সরাসরি Blob object টা save করে রাখো!
-                                      // FileReader async হওয়ায় আগে save হতে দেরি হতো।
-                                      window.__capturedBlobs[url] = obj;
-                                      console.log('📦 Saved raw Blob object for URL:', url, 'size:', obj.size, 'type:', obj.type);
-                                    }
-                                    return url;
-                                  };
-
-                                  // 🚨 FIX: Revoke করা পুরোপুরি বন্ধ করো!
-                                  // revoke করলে Browser মেমোরি থেকে Blob মুছে দেয়, 
-                                  // ফলে Flutter fetch করলে 0 byte / corrupted file পায়।
-                                  var origRevoke = URL.revokeObjectURL;
-                                  URL.revokeObjectURL = function(url) {
-                                    console.log('🚫 Prevented blob revoke for:', url);
-                                    // origRevoke.call(URL, url); // <- এটা কল করা যাবে না!
+                                  // 🚨 FIX: html2pdf.js Android WebView তে কাজ করে না (corrupted/blank PDF দেয়)
+                                  // তাই আমরা downloadPDF ফাংশনটাকেই override করে Android Native Print কল করে দিচ্ছি!
+                                  window.downloadPDF = function() {
+                                    console.log('🖨️ Intercepted downloadPDF! Launching Native Print...');
+                                    window.print();
                                   };
                                 })();
                               """,
