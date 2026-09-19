@@ -40,55 +40,7 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
-                // ✅ File open — FileProvider দিয়ে PDF viewer খোলা
-                "openFile" -> {
-                    val filePath = call.argument<String>("filePath")
-                    val mimeType = call.argument<String>("mimeType") ?: "application/pdf"
-                    if (filePath == null) {
-                        result.error("INVALID_ARG", "filePath is required", null)
-                        return@setMethodCallHandler
-                    }
-                    try {
-                        val file = File(filePath)
-                        if (!file.exists()) {
-                            result.error("FILE_NOT_FOUND", "File does not exist: $filePath", null)
-                            return@setMethodCallHandler
-                        }
-
-                        val uri: Uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                            // Android 7+ এ FileProvider required
-                            FileProvider.getUriForFile(
-                                this,
-                                "${packageName}.provider",
-                                file
-                            )
-                        } else {
-                            Uri.fromFile(file)
-                        }
-
-                        val intent = Intent(Intent.ACTION_VIEW).apply {
-                            setDataAndType(uri, mimeType)
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                        }
-
-                        // কোনো PDF viewer আছে কিনা চেক করো
-                        val packageManager = packageManager
-                        if (intent.resolveActivity(packageManager) != null) {
-                            startActivity(intent)
-                            result.success(true)
-                        } else {
-                            // PDF viewer নেই — chooser দেখাও
-                            val chooser = Intent.createChooser(intent, "Open PDF with")
-                            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            startActivity(chooser)
-                            result.success(true)
-                        }
-                    } catch (e: Exception) {
-                        result.error("OPEN_FAILED", e.message, null)
-                    }
-                }
+// Removed openFile custom intent handler in favor of open_filex package
 
                 else -> result.notImplemented()
             }

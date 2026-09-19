@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:open_filex/open_filex.dart';
 import 'colors.dart';
 import 'storage_permission.dart';
 
@@ -164,9 +166,15 @@ Future<void> saveBase64ToFile(
     // ── Step 2: File name ও extension ──
     final bool isPdf = mimeType?.contains('pdf') == true;
     final String ext = isPdf ? 'pdf' : 'bin';
-    final String finalFilename =
+    String finalFilename =
         suggestedFilename ??
         "download_${DateTime.now().millisecondsSinceEpoch}.$ext";
+
+    // 🚨 FIX: Force append .pdf if it's missing (Android viewers refuse to open without it)
+    if (isPdf && !finalFilename.toLowerCase().endsWith('.pdf')) {
+      finalFilename += '.pdf';
+    }
+
     final String resolvedMime =
         isPdf ? 'application/pdf' : (mimeType ?? 'application/octet-stream');
 
@@ -238,14 +246,11 @@ Future<void> saveBase64ToFile(
   }
 }
 
-// ✅ PDF / File খোলার জন্য — FileProvider দিয়ে system PDF viewer launch করে
+// ✅ PDF / File খোলার জন্য — open_filex প্যাকেজ ব্যবহার করে
 Future<void> _openFile(String filePath, String mimeType) async {
   try {
-    await _mediaScanChannel.invokeMethod(
-      'openFile',
-      {'filePath': filePath, 'mimeType': mimeType},
-    );
-    debugPrint('✅ File opened: $filePath');
+    final result = await OpenFilex.open(filePath);
+    debugPrint('✅ File open result: ${result.type} - ${result.message}');
   } catch (e) {
     debugPrint('❌ Open file error: $e');
   }
