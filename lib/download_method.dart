@@ -163,25 +163,6 @@ Future<void> saveBase64ToFile(
     final Uint8List bytes =
         base64Decode(base64String.replaceAll(RegExp(r'\s+'), ''));
 
-    // 🚨 DEBUG: ফাইলের ভেতরে আসলে কী আছে তা দেখার জন্য (প্রথম ১০০ ক্যারেক্টার)
-    final String fileHeader = String.fromCharCodes(bytes.take(100));
-    debugPrint('🚨 FILE HEADER: $fileHeader');
-    if (context.mounted) {
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Debug Info (File Content)'),
-          content: Text('First 100 chars:\n\n$fileHeader'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('OK'),
-            )
-          ],
-        ),
-      );
-    }
-
     // ── Step 2: File name ও extension ──
     final bool isPdf = mimeType?.contains('pdf') == true;
     final String ext = isPdf ? 'pdf' : 'bin';
