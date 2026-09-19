@@ -527,19 +527,9 @@ class _WebViewScreenState extends State<WebViewScreen>
                                   if (window.__blobCaptureInstalled) return;
                                   window.__blobCaptureInstalled = true;
 
-                                  // 🚨 FIX: ওয়েবসাইটের নিজস্ব স্ক্রিপ্ট যেন আমাদের override মুছতে না পারে,
-                                  // তাই আমরা একদম মূলে (capture phase) ক্লিক ধরে ফেলছি!
-                                  document.addEventListener('click', function(e) {
-                                    var btn = e.target.closest('[onclick*="downloadPDF"], .fa-download');
-                                    if (btn) {
-                                      e.preventDefault();
-                                      e.stopImmediatePropagation(); // ওয়েবসাইটের স্ক্রিপ্ট বন্ধ!
-                                      console.log('🖨️ Intercepted Print Button! Launching SILENT Native Print...');
-                                      window.flutter_inappwebview.callHandler('generateSilentPdf');
-                                    }
-                                  }, true); // true = Capture phase (সবচেয়ে আগে রান করবে)
-
-                                  // 🚨 FIX: Revoke করা পুরোপুরি বন্ধ করো! (অন্যান্য blob ডাউনলোডের জন্য)
+                                  // 🚨 FIX: Revoke করা পুরোপুরি বন্ধ করো!
+                                  // revoke করলে Browser মেমোরি থেকে Blob মুছে দেয়, 
+                                  // ফলে Flutter fetch করলে 0 byte / corrupted file পায়।
                                   var origRevoke = URL.revokeObjectURL;
                                   URL.revokeObjectURL = function(url) {
                                     console.log('🚫 Prevented blob revoke for:', url);
@@ -550,67 +540,6 @@ class _WebViewScreenState extends State<WebViewScreen>
                                   UserScriptInjectionTime.AT_DOCUMENT_START,
                               contentWorld: ContentWorld.PAGE,
                             ),
-                          );
-
-                          // ✅ Silent PDF Generation Handler (Flutter Receiver)
-                          controller.addJavaScriptHandler(
-                            handlerName: 'generateSilentPdf',
-                            callback: (args) async {
-                              debugPrint('📸 JS Trigger: Generating SILENT PDF...');
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Downloading Invoice... Please wait.'),
-                                  backgroundColor: Colors.blue,
-                                  duration: Duration(seconds: 3),
-                                ),
-                              );
-
-                              try {
-                                final pdfBytes = await _webViewController?.createPdf();
-
-                                if (pdfBytes != null) {
-                                  String filename = "Invoice_${DateTime.now().millisecondsSinceEpoch}.pdf";
-                                  Directory? dlDir;
-                                  if (Platform.isAndroid) {
-                                    dlDir = Directory('/storage/emulated/0/Download');
-                                    if (!await dlDir.exists()) await dlDir.create(recursive: true);
-                                    if (!await dlDir.exists()) dlDir = await getExternalStorageDirectory();
-                                  } else {
-                                    dlDir = await getApplicationDocumentsDirectory();
-                                  }
-
-                                  if (dlDir != null) {
-                                    final File savedFile = File('${dlDir.path}/$filename');
-                                    await savedFile.writeAsBytes(pdfBytes);
-                                    
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('✅ Invoice saved to Downloads!'),
-                                          backgroundColor: Colors.green,
-                                          duration: const Duration(seconds: 5),
-                                          action: SnackBarAction(
-                                            label: 'OPEN',
-                                            textColor: Colors.white,
-                                            onPressed: () => OpenFilex.open(savedFile.path),
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                  }
-                                } else {
-                                  throw Exception("PDF bytes are null");
-                                }
-                              } catch (e) {
-                                debugPrint("Silent PDF Error: $e");
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Download failed: $e'), backgroundColor: Colors.red),
-                                  );
-                                }
-                              }
-                            },
                           );
 
                           // ✅ Web Share API Handler (Flutter Receiver)
