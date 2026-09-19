@@ -521,20 +521,16 @@ class _WebViewScreenState extends State<WebViewScreen>
                             userScript: UserScript(
                               source: """
                                 (function() {
-                                  if (window.__printCaptureInstalled) return;
-                                  window.__printCaptureInstalled = true;
+                                  if (window.__blobCaptureInstalled) return;
+                                  window.__blobCaptureInstalled = true;
 
-                                  // 🚨 FIX: ওয়েবসাইটের নিজস্ব স্ক্রিপ্ট যেন আমাদের override মুছতে না পারে,
-                                  // তাই আমরা একদম মূলে (capture phase) ক্লিক ধরে ফেলছি!
-                                  document.addEventListener('click', function(e) {
-                                    var btn = e.target.closest('[onclick*="downloadPDF"], .fa-download');
-                                    if (btn) {
-                                      e.preventDefault();
-                                      e.stopImmediatePropagation(); // ওয়েবসাইটের স্ক্রিপ্ট বন্ধ!
-                                      console.log('🖨️ Intercepted Print Button! Launching Native Print...');
-                                      window.print();
-                                    }
-                                  }, true); // true = Capture phase (সবচেয়ে আগে রান করবে)
+                                  // 🚨 FIX: Revoke করা পুরোপুরি বন্ধ করো!
+                                  // revoke করলে Browser মেমোরি থেকে Blob মুছে দেয়, 
+                                  // ফলে Flutter fetch করলে 0 byte / corrupted file পায়।
+                                  var origRevoke = URL.revokeObjectURL;
+                                  URL.revokeObjectURL = function(url) {
+                                    console.log('🚫 Prevented blob revoke for:', url);
+                                  };
                                 })();
                               """,
                               injectionTime:
